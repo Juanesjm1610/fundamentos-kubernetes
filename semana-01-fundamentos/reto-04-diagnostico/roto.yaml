@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tienda
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tienda
+  template:
+    metadata:
+      labels:
+        app: tienda
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.99-no-existe
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tienda
+spec:
+  selector:
+    app: tiendaa
+  ports:
+    - port: 80
+      targetPort: 80
