@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador Kubernetes Puerto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: consola técnica de laboratorio, didáctica.
+   IDEA: panel de control del clúster con la analogía de un puerto de contenedores.
+   PICTURE: mapa del clúster por zonas (exterior, control plane, worker) con la pieza activa brillando en cian.
+   COLOUR and TYPE: azul marino #0a1020, paneles #0f172a, azul #3b82f6, cian #22d3ee, ámbar/verde/rojo para estados; Inter + JetBrains Mono.
+   LAYOUT: cabecera con controles y pestañas de flujo, mapa grande a la izquierda, panel y log a la derecha. */
+:root{color-scheme:dark;--bg:#070d1a;--p:#0d1527;--p2:#111c33;--line:#1f2c47;--ink:#e2e8f0;--mut:#8b9bb8;
+--blue:#3b82f6;--cyan:#22d3ee;--amber:#f59e0b;--green:#22c55e;--red:#ef4444;--violet:#a78bfa}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:radial-gradient(1200px 600px at 20% -10%,#12204a55,transparent),var(--bg);color:var(--ink);font:14px/1.5 Inter,system-ui,sans-serif;overflow-x:clip;min-height:100vh}
+.mono,code,pre{font-family:"JetBrains Mono",ui-monospace,monospace}
+pre{margin:0;overflow-x:auto}
+button{font:inherit;cursor:pointer;color:var(--ink);background:var(--p2);border:1px solid var(--line);border-radius:8px;min-height:36px;padding:0 14px}
+button:hover{border-color:#34507f}
+button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+header{display:flex;flex-wrap:wrap;gap:14px 24px;justify-content:space-between;align-items:flex-start;padding:16px max(3vw,14px);border-bottom:1px solid var(--line);background:#0a1222cc}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#1d4ed8,#0ea5e9);display:grid;place-items:center;box-shadow:0 0 18px #3b82f655}
+.brand h1{margin:0;font-size:19px;font-weight:700;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ed{font:600 11px "JetBrains Mono";color:var(--amber);border:1px solid #f59e0b66;background:#f59e0b14;padding:2px 8px;border-radius:6px}
+.brand p{margin:2px 0 0;color:var(--mut);font-size:12.5px}
+.ctrls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.ctrls .on{color:var(--amber);border-color:#f59e0b66;background:#f59e0b14}
+.ctrls .pri{background:var(--blue);border-color:var(--blue);color:#fff}
+.ctrls .go{color:var(--green);border-color:#22c55e55;background:#22c55e12}
+.flows{display:flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:12px;background:var(--p);overflow-x:auto;max-width:100%}
+.flows button{flex:none;border:0;background:transparent;font-size:12.5px;color:var(--mut);display:flex;gap:7px;align-items:center}
+.flows button i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.flows button[aria-selected=true]{background:var(--blue);color:#fff;box-shadow:0 0 14px #3b82f666}
+main{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(0,1fr);gap:16px;padding:16px max(3vw,14px) 32px;max-width:1500px;margin:auto}
+.panel{background:var(--p);border:1px solid var(--line);border-radius:14px;padding:14px}
+.term{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:#060b16;border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.term code{color:#7dd3fc;font-size:14px;overflow-wrap:anywhere}
+.term code::after{content:"";display:inline-block;width:8px;height:15px;background:var(--cyan);margin-left:6px;vertical-align:-2px;animation:b 1s steps(1) infinite}
+@keyframes b{50%{opacity:0}}
+.prog{display:flex;gap:8px;align-items:center;color:var(--mut);font-size:12.5px}
+.prog b{font:600 12px "JetBrains Mono";color:#93c5fd;border:1px solid #3b82f655;background:#3b82f614;padding:3px 8px;border-radius:6px}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;margin-top:10px}
+.steps button{font:12px "JetBrains Mono";min-height:34px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#0a1222}
+.steps .on{border-color:var(--blue);color:#93c5fd;box-shadow:inset 0 0 0 1px var(--blue),0 0 12px #3b82f655}
+.steps .done{color:var(--green);border-color:#22c55e44}
+.hint{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;margin:14px 0 12px;color:var(--mut);font-size:12.5px}
+.hint .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);display:inline-block;margin-right:6px}
+.crash{color:#fca5a5;border-color:#ef444466;background:#ef444414;font-size:12.5px}
+.map{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,3fr);gap:12px}
+.zone{border:1px solid var(--line);border-radius:12px;padding:12px;background:#0a1222;display:grid;gap:10px;align-content:start}
+.zh{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;font:600 12.5px "JetBrains Mono";letter-spacing:.02em}
+.zh .t{display:flex;align-items:center;gap:7px}
+.zh .t i{width:8px;height:8px;border-radius:50%}
+.zh .a{font:500 11.5px Inter;color:var(--amber);border:1px solid #f59e0b44;background:#f59e0b10;padding:2px 8px;border-radius:6px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.col{display:grid;gap:8px}
+.c{display:block;width:100%;text-align:left;padding:10px;border-radius:10px;background:var(--p2);border:1px solid var(--line);min-height:0;transition:box-shadow .3s,border-color .3s}
+.c .r{display:flex;justify-content:space-between;gap:6px;align-items:flex-start;margin-bottom:6px}
+.c .tg{font:500 11px "JetBrains Mono";padding:2px 6px;border-radius:5px;border:1px solid}
+.c .an{font-size:11.5px;color:var(--amber);text-align:right}
+.c b{display:block;font-size:14px;margin-bottom:2px}
+.c small{display:block;color:var(--mut);font-size:12px;line-height:1.4}
+.c .ft{display:flex;justify-content:space-between;gap:6px;margin-top:8px;font:11px "JetBrains Mono";color:var(--cyan)}
+.c.active{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 0 22px #22d3ee44;outline:1px dashed #f59e0b88;outline-offset:3px}
+.c.broken{border-color:var(--red);box-shadow:0 0 18px #ef444444}
+.tb{color:#93c5fd;border-color:#3b82f655;background:#3b82f614}.tv{color:#c4b5fd;border-color:#a78bfa55;background:#a78bfa14}
+.tc{color:#67e8f9;border-color:#22d3ee55;background:#22d3ee14}.ta{color:#fcd34d;border-color:#f59e0b55;background:#f59e0b14}
+.tgr{color:#86efac;border-color:#22c55e55;background:#22c55e14}
+.pods{display:grid;gap:6px;margin-top:6px}
+.pod{display:flex;justify-content:space-between;gap:8px;align-items:center;font:12px "JetBrains Mono";padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:#0a1222}
+.pod span:first-child::before{content:"●";margin-right:6px;font-size:9px;color:var(--st)}
+.pod .s{white-space:nowrap;color:var(--st)}
+aside{display:grid;gap:14px;align-content:start}
+.fl{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.fl .pill{font:500 11.5px "JetBrains Mono";color:#93c5fd;border:1px solid #3b82f655;background:#3b82f614;padding:4px 10px;border-radius:99px}
+.fl small{color:var(--mut);font:11.5px "JetBrains Mono";white-space:nowrap}
+aside h2{font-size:17px;margin:12px 0;line-height:1.3}
+.bx{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--p2)}
+.bx h3{margin:0 0 4px;font-size:12.5px}
+.bx p{margin:0;font-size:13px;color:#cbd5e1}
+.bx.w{border-color:#f59e0b55;background:#f59e0b0d}.bx.w h3{color:#fcd34d}
+.bx.k h3{color:#93c5fd;font-family:"JetBrains Mono"}
+.yaml{border:1px solid var(--line);border-radius:10px;background:#060b16}
+.yaml .h{display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--line);font:11.5px "JetBrains Mono";color:var(--mut)}
+.yaml .h span:last-child{color:var(--cyan)}
+.yaml pre{padding:12px;font-size:12.5px;color:#a5f3fc;line-height:1.6}
+.log{border:1px solid var(--line);border-radius:12px;background:#060b16;overflow:hidden}
+.log .h{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--line);font:12px "JetBrains Mono";color:var(--mut)}
+.log .h i{width:10px;height:10px;border-radius:50%}
+.log .live{margin-left:auto;color:var(--green);border:1px solid #22c55e55;background:#22c55e12;padding:1px 8px;border-radius:5px;font-size:11px}
+#log{padding:12px;font:12.5px/1.7 "JetBrains Mono";color:#7dd3fc;min-height:140px;max-height:240px;overflow:auto}
+#log .k{color:var(--mut)}
+.reto details{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px;background:var(--p2)}
+.reto summary{cursor:pointer;font-weight:600;font-size:13px}
+.reto summary em{font-style:normal;font-family:"JetBrains Mono";color:#fca5a5}
+.reto p{font-size:13px;color:#cbd5e1;margin:6px 0}
+.reto pre{background:#060b16;border-radius:8px;padding:8px;font-size:12px;color:#a5f3fc}
+@media(max-width:1100px){main{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:760px){.map{grid-template-columns:minmax(0,1fr)}.grid4,.grid3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:460px){.grid4,.grid3{grid-template-columns:minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.term code::after{animation:none}.c{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="brand">
+      <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v6.5M12 14.5V21M3 12h6.5M14.5 12H21M5.6 5.6l4.6 4.6M13.8 13.8l4.6 4.6M18.4 5.6l-4.6 4.6M10.2 13.8l-4.6 4.6"/></svg></div>
+      <div><h1>Simulador Interactivo de Kubernetes <span class="ed">Edición Puerto</span></h1>
+      <p>De grumete a capitán · sigue cada contenedor desde tu terminal hasta que atiende tráfico</p></div>
+    </div>
+    <div class="ctrls">
+      <button class="on" id="ana">Puerto: ON</button>
+      <button id="prev">‹ Anterior</button>
+      <button class="pri" id="next">Siguiente ›</button>
+      <button class="go" id="auto">▶ Auto</button>
+      <button id="reset" aria-label="Reiniciar">↻</button>
+    </div>
+  </div>
+  <div class="flows" role="tablist" id="flows"></div>
+</header>
+
+<main>
+  <div class="col">
+    <section class="panel">
+      <div class="term"><code id="cmd"></code><div class="prog">Progreso: <b id="prog"></b></div></div>
+      <div class="steps" id="steps"></div>
+    </section>
+    <section class="panel">
+      <div class="hint"><span><span class="dot"></span><b>Interactivo:</b> toca cualquier componente del mapa para ver su función, su analogía en el puerto y comandos útiles.</span>
+        <button class="crash" id="crash">Simular caída de Pod</button></div>
+      <div class="map">
+        <div class="zone"><div class="zh"><span class="t">MUNDO EXTERIOR</span><span class="ed" style="color:var(--mut);border-color:var(--line);background:none">ADMIN / WEB</span></div><div class="col" id="z-ext"></div></div>
+        <div class="col">
+          <div class="zone"><div class="zh"><span class="t"><i style="background:var(--blue)"></i>CONTROL PLANE (CEREBRO DEL CLÚSTER)</span><span class="a">Capitanía del puerto</span></div><div class="grid4" id="z-cp"></div></div>
+          <div class="zone"><div class="zh"><span class="t"><i style="background:var(--green)"></i>WORKER NODE · worker-node-01 · 192.168.1.10</span><span class="a">Muelle 1 (grúas CPU + bodega RAM)</span></div>
+            <div class="grid3"><div class="col" id="z-wa"></div><div class="col" id="z-wb"></div>
+              <div class="c" style="cursor:default"><div class="r"><span class="tg tgr">Carga</span><span class="an">Contenedores apilados</span></div><b>Pods de Aplicación</b><small>Contenedor principal + sidecar de logs/métricas.</small><div class="pods" id="pods"></div><div class="ft"><span>Puerto: 8080</span><span id="ep">Endpoints</span></div></div>
+            </div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <aside>
+    <div class="panel" id="info"></div>
+    <div class="log"><div class="h"><i style="background:#ef4444"></i><i style="background:#f59e0b"></i><i style="background:#22c55e"></i>&nbsp;eventos-del-cluster.log<span class="live">EN VIVO</span></div><div id="log" aria-live="polite"></div></div>
+  </aside>
+</main>
+
+<script>
+{
+const C={
+ kubectl:{z:'ext',tg:['CLI Ingeniero','tc'],n:'Terminal (kubectl)',an:'El armador',d:'Envía el pedido YAML al puerto (:6443).',ft:['~/.kube/config','TLS'],cmd:'kubectl get pods -o wide'},
+ client:{z:'ext',tg:['Usuario Final','tb'],n:'Cliente Web / App',an:'El comprador',d:'Petición HTTPS GET.',ft:['DNS','HTTPS'],cmd:'curl -I https://mi-app.ejemplo.com'},
+ lb:{z:'ext',tg:['Cloud LB','tgr'],n:'LoadBalancer',an:'Faro de entrada',d:'IP pública 203.0.113.50.',ft:['L4','443'],cmd:'kubectl get svc -A'},
+ registry:{z:'ext',tg:['OCI Registry','tb'],n:'Harbor / Docker Hub',an:'Fábrica de cajas',d:'Almacén de imágenes.',ft:['push','pull'],cmd:'docker push registro/mi-app:v1'},
+ api:{z:'cp',tg:['Front-Door','tb'],n:'kube-apiserver',an:'Ventanilla de capitanía',d:'Puerta única REST. Valida permisos y coordina todo.',ft:['AuthN / RBAC','Admission'],cmd:'kubectl cluster-info'},
+ etcd:{z:'cp',tg:['Key-Value DB','tb'],n:'etcd',an:'Libro de bitácora',d:'Base de datos oficial del estado del clúster.',ft:['/registry','Raft'],cmd:'kubectl get deploy mi-app -o yaml'},
+ ctrl:{z:'cp',tg:['Reconciliación','tv'],n:'Controller Manager',an:'Inspector de muelle',d:'Compara estado deseado vs. actual. Repone Pods caídos.',ft:['ReplicaSet','Self-Heal'],cmd:'kubectl get rs'},
+ sched:{z:'cp',tg:['Asignador','ta'],n:'kube-scheduler',an:'Jefe de atraque',d:'Filtra y puntúa los nodos según CPU/RAM.',ft:['Filter & Score','Bind'],cmd:'kubectl describe pod <pod>'},
+ ingress:{z:'wa',tg:['Ruteo L7','tgr'],n:'Ingress / Gateway API',an:'Control de aduana',d:'Enruta mi-app.ejemplo.com/api al Service.',ft:['host','path'],cmd:'kubectl get ingress'},
+ svc:{z:'wa',tg:['VIP 10.96.0.15','tgr'],n:'Service & kube-proxy',an:'Grúa de reparto',d:'Balancea tráfico solo hacia Pods sanos.',ft:['iptables','eBPF'],cmd:'kubectl get endpoints mi-app'},
+ cfg:{z:'wa',tg:['Config & PVC','ta'],n:'ConfigMap, Secret & PV',an:'Manifiesto de carga',d:'Variables, credenciales y disco persistente.',ft:['env','volume'],cmd:'kubectl get cm,secret,pvc'},
+ kubelet:{z:'wb',tg:['Agente Nodo','tc'],n:'kubelet',an:'Capataz del muelle',d:'Recibe órdenes del API server y ejecuta sondas.',ft:['CRI gRPC','Probes :8080'],cmd:'kubectl get nodes'},
+ runtime:{z:'wb',tg:['containerd + CNI','tb'],n:'Runtime + Plugin CNI',an:'Grúa y cableado',d:'Descarga la imagen, crea cgroups y asigna IP.',ft:['Pull Image','veth ↔ cni0'],cmd:'kubectl get events --sort-by=.lastTimestamp'},
+ pod:{z:'none',n:'Pods de Aplicación',an:'Contenedores apilados',d:'Tu app corriendo.',cmd:'kubectl logs <pod>'}
+};
+const Y=`kind: Deployment
+metadata:
+  name: mi-app
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+      - name: web
+        image: registro/mi-app:v1`;
+const R=[['mi-app-7d9f-a1','Running'],['mi-app-7d9f-b2','Running']];
+const F=[
+{t:'1. Despliegue (apply)',dot:'#3b82f6',cmd:'kubectl apply -f deployment.yaml',s:[
+ {c:'kubectl',h:'Terminal CLI (kubectl): envío del pedido YAML',a:'Llegas a la capitanía con tu orden escrita: «Necesito 2 contenedores de mi-app siempre en el muelle».',e:'Escribes tu YAML y ejecutas kubectl apply. La herramienta revisa el formato y lo envía por red segura a la ventanilla del clúster.',x:'kubectl lee ~/.kube/config, convierte el YAML a JSON y hace un POST por TLS al puerto 6443 (/apis/apps/v1/namespaces/default/deployments).',y:Y,l:['[kubectl] Leyendo credenciales desde ~/.kube/config','[TLS] Conectando con kube-apiserver:6443...','[HTTP] POST /apis/apps/v1/namespaces/default/deployments'],p:[]},
+ {c:'api',h:'kube-apiserver: la ventanilla revisa los papeles',a:'El funcionario verifica quién eres, si tienes permiso y si el formulario está bien diligenciado.',e:'Antes de aceptar nada, el clúster comprueba identidad y permisos.',x:'Autenticación (certificado/token), autorización RBAC y admission controllers que validan o modifican el objeto.',y:'kubectl auth can-i create deployments\nyes',l:['[apiserver] AuthN OK usuario=juan','[apiserver] RBAC OK verb=create','[admission] objeto validado'],p:[]},
+ {c:'etcd',h:'etcd: se anota en la bitácora',a:'El pedido queda escrito en el libro oficial del puerto. Lo que no está aquí, no existe.',e:'Tu pedido queda guardado como estado deseado.',x:'El Deployment se persiste en etcd con consenso Raft. Solo el API server habla con etcd.',y:'/registry/deployments/default/mi-app',l:['[etcd] PUT /registry/deployments/default/mi-app','[apiserver] 201 Created'],p:[]},
+ {c:'ctrl',h:'Controller Manager: faltan contenedores',a:'El inspector lee la bitácora: piden 2 y hay 0. Abre dos órdenes de trabajo.',e:'Un vigilante compara lo pedido con lo que existe y crea lo que falta.',x:'El Deployment controller crea un ReplicaSet; este crea 2 Pods sin nodo asignado (Pending).',y:'kubectl get rs\nNAME          DESIRED  CURRENT\nmi-app-7d9f   2        2',l:['[controller] ReplicaSet mi-app-7d9f creado','[controller] deseado=2 actual=0 → crear 2 pods'],p:[['mi-app-7d9f-a1','Pending'],['mi-app-7d9f-b2','Pending']]},
+ {c:'sched',h:'kube-scheduler: se elige el muelle',a:'El jefe de atraque mira qué muelle tiene grúas libres y asigna cada contenedor.',e:'Se decide en qué máquina va a correr cada Pod.',x:'Filtrado (recursos, taints, afinidad), puntuación y Bind del Pod al nodo.',y:'spec:\n  nodeName: worker-node-01',l:['[scheduler] Filtrando 3 nodos → 1 apto','[scheduler] Bind mi-app-7d9f-a1 → worker-node-01'],p:[['mi-app-7d9f-a1','Pending'],['mi-app-7d9f-b2','Pending']]},
+ {c:'kubelet',h:'kubelet: el capataz recibe la orden',a:'El capataz del muelle 1 ve que le asignaron contenedores y llama a la grúa.',e:'El agente del nodo se entera de que tiene trabajo.',x:'kubelet observa (watch) los Pods con su nodeName y llama al runtime por CRI (gRPC).',y:'kubectl describe node worker-node-01',l:['[kubelet] Pod asignado a este nodo','[kubelet] CRI RunPodSandbox'],p:[['mi-app-7d9f-a1','ContainerCreating'],['mi-app-7d9f-b2','ContainerCreating']]},
+ {c:'runtime',h:'Runtime + CNI: la grúa trae la caja',a:'La grúa recoge la caja en la fábrica, la ubica y le conecta luz y red.',e:'Se descarga la imagen y el contenedor recibe su IP.',x:'containerd hace pull de la imagen, crea namespaces y cgroups; el CNI (Calico/Cilium) asigna IP al Pod.',y:'Pulling image "registro/mi-app:v1"\nIP asignada 10.244.1.43',l:['[containerd] Pull registro/mi-app:v1','[cni] veth creado, IP 10.244.1.43'],p:[['mi-app-7d9f-a1','ContainerCreating'],['mi-app-7d9f-b2','ContainerCreating']]},
+ {c:'pod',h:'Pods Running: contenedores listos',a:'Las dos cajas están en su sitio y el capataz confirma que funcionan.',e:'Tu aplicación ya está viva y lista para recibir tráfico.',x:'Pasan las sondas readiness/liveness; el Pod queda Running y entra como endpoint del Service.',y:'NAME              READY  STATUS\nmi-app-7d9f-a1    1/1    Running\nmi-app-7d9f-b2    1/1    Running',l:['[kubelet] Readiness OK','[apiserver] Estado: 2/2 Running'],p:R}
+]},
+{t:'2. Tráfico Cliente (curl)',dot:'#22c55e',cmd:'curl https://mi-app.ejemplo.com/api',s:[
+ {c:'client',h:'Cliente web: el comprador hace un pedido',a:'Alguien desde la calle pide mercancía por la web.',e:'Un usuario abre tu aplicación.',x:'El DNS resuelve el dominio a la IP pública y el cliente abre HTTPS.',y:'nslookup mi-app.ejemplo.com\n→ 203.0.113.50',l:['[dns] mi-app.ejemplo.com → 203.0.113.50'],p:R},
+ {c:'lb',h:'LoadBalancer: entra por el faro',a:'El barco ve el faro y entra al puerto.',e:'La IP pública recibe la petición.',x:'El LoadBalancer de la nube pasa el tráfico al Ingress controller.',y:'type: LoadBalancer\nexternalIP: 203.0.113.50',l:['[lb] 203.0.113.50:443 → ingress-nginx'],p:R},
+ {c:'ingress',h:'Ingress: la aduana revisa el destino',a:'La aduana lee la etiqueta: «/api va a mi-app».',e:'Se decide a qué servicio va según el dominio y la ruta.',x:'El Ingress termina TLS y enruta por host/path al Service.',y:'rules:\n- host: mi-app.ejemplo.com\n  http:\n    paths:\n    - path: /api\n      backend:\n        service:\n          name: mi-app\n          port: {number: 80}',l:['[ingress] host+path → svc/mi-app:80'],p:R},
+ {c:'svc',h:'Service: la grúa reparte la carga',a:'La grúa lleva cada pedido a un contenedor sano, turnándose.',e:'El tráfico se reparte entre las copias de tu app.',x:'El Service (ClusterIP 10.96.0.15) balancea con kube-proxy (iptables/IPVS) o eBPF entre los endpoints.',y:'kubectl get endpoints mi-app\n10.244.1.43:8080,10.244.1.44:8080',l:['[kube-proxy] 10.96.0.15 → 10.244.1.43:8080'],p:R},
+ {c:'pod',h:'Pod: el contenedor responde',a:'El contenedor despacha la mercancía de vuelta al comprador.',e:'Tu app responde y el usuario ve la página.',x:'La app responde HTTP 200 y la respuesta vuelve por el mismo camino.',y:'HTTP/1.1 200 OK\ncontent-type: application/json',l:['[pod] GET /api 200 12ms'],p:R}
+]},
+{t:'3. Auto-Curación (Self-Healing)',dot:'#f59e0b',cmd:'kubectl delete pod mi-app-7d9f-a1',s:[
+ {c:'pod',b:'pod',h:'Se cae un contenedor',a:'Una caja se cae al agua.',e:'Una copia de tu app deja de funcionar.',x:'El Pod termina (fallo, OOMKilled o borrado manual).',y:'STATUS: Terminating',l:['[kubelet] Pod mi-app-7d9f-a1 terminado'],p:[['mi-app-7d9f-a1','Terminating'],['mi-app-7d9f-b2','Running']]},
+ {c:'kubelet',h:'kubelet: el capataz avisa',a:'El capataz reporta a capitanía que falta una caja.',e:'El nodo informa lo que pasó.',x:'kubelet actualiza el estado del Pod en el API server y queda en etcd.',y:'kubectl get events',l:['[kubelet] Reportando estado al apiserver'],p:[['mi-app-7d9f-b2','Running']]},
+ {c:'ctrl',h:'Controller: detecta el faltante',a:'La bitácora dice 2, en el muelle hay 1. Pide reponer.',e:'El vigilante nota la diferencia y pide otra copia.',x:'El ReplicaSet controller ve actual=1 y deseado=2, y crea un Pod nuevo.',y:'deseado: 2\nactual:  1',l:['[controller] deseado=2 actual=1 → crear 1 pod'],p:[['mi-app-7d9f-b2','Running'],['mi-app-7d9f-c3','Pending']]},
+ {c:'sched',h:'Scheduler: asigna muelle',a:'El jefe de atraque asigna la nueva caja.',e:'Se elige dónde va la nueva copia.',x:'Bind del nuevo Pod a un nodo con recursos.',y:'nodeName: worker-node-01',l:['[scheduler] Bind mi-app-7d9f-c3 → worker-node-01'],p:[['mi-app-7d9f-b2','Running'],['mi-app-7d9f-c3','ContainerCreating']]},
+ {c:'pod',h:'El puerto se curó solo',a:'Nadie tuvo que llamar a nadie: vuelve a haber 2 cajas.',e:'Kubernetes se reparó sin que tú hicieras nada.',x:'Reconciliación: el estado real vuelve al deseado sin intervención humana.',y:'kubectl get pods -w',l:['[kubelet] mi-app-7d9f-c3 Running','[cluster] 2/2 réplicas disponibles'],p:[['mi-app-7d9f-b2','Running'],['mi-app-7d9f-c3','Running']]}
+]},
+{t:'4. Diagnóstico (Retos Rotos)',dot:'#ef4444',cmd:'kubectl get pods',retos:[
+ {c:'runtime',e:'ImagePullBackOff',h:'El Pod no descarga la imagen.',x:'kubectl describe pod mi-app-xxx',p:'Mira Events: ¿existen el nombre y el tag de la imagen? ¿El registro es privado?',r:'Corrige image: en el YAML o crea un imagePullSecret y vuelve a aplicar.'},
+ {c:'kubelet',e:'CrashLoopBackOff',h:'El contenedor arranca y muere.',x:'kubectl logs mi-app-xxx --previous',p:'Los logs del intento anterior suelen decir la causa (variable faltante, puerto ocupado).',r:'Revisa ConfigMap/Secret y el comando de arranque; aplica y observa con kubectl get pods -w.'},
+ {c:'sched',e:'Pending',h:'El Pod nunca sale de Pending.',x:'kubectl describe pod mi-app-xxx',p:'Busca «0/3 nodes are available»: ¿faltan CPU/RAM? ¿Hay taints?',r:'Baja los requests, agrega nodos o una toleration adecuada.'},
+ {c:'svc',e:'Sin endpoints',h:'El Service no responde.',x:'kubectl get endpoints mi-app',p:'Si la lista está vacía, el selector del Service no coincide con las labels del Pod.',r:'Iguala spec.selector del Service con metadata.labels del Pod.'}
+]}];
+const ST={Running:'#22c55e',Pending:'#f59e0b',ContainerCreating:'#f59e0b',Terminating:'#ef4444',ImagePullBackOff:'#ef4444',CrashLoopBackOff:'#ef4444'};
+let f=0,i=0,timer=null,ana=true;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function card(k,v,act,brk){return `<button class="c${k===act?' active':''}${k===brk?' broken':''}" data-c="${k}"><div class="r"><span class="tg ${v.tg[1]}">${v.tg[0]}</span>${ana?`<span class="an">${v.an}</span>`:''}</div><b>${v.n}</b><small>${v.d}</small><div class="ft"><span>${v.ft[0]}</span><span>${v.ft[1]}</span></div></button>`}
+function map(act,brk){['ext','cp','wa','wb'].forEach(z=>{$('z-'+z).innerHTML=Object.entries(C).filter(([,v])=>v.z===z).map(([k,v])=>card(k,v,act,brk)).join('')});
+ const pc=$('pods').closest('.c');pc.classList.toggle('active',act==='pod');pc.classList.toggle('broken',brk==='pod')}
+function pods(L){$('pods').innerHTML=L.length?L.map(([n,s])=>`<div class="pod" style="--st:${ST[s]||'#8b9bb8'}"><span>${n}</span><span class="s">${s}</span></div>`).join(''):'<div class="pod" style="--st:#8b9bb8"><span>Aún no hay Pods</span><span class="s">—</span></div>';
+ const ok=L.filter(p=>p[1]==='Running').length;$('ep').textContent=ok?`Endpoints activos: ${ok}`:'Sin endpoints';$('ep').style.color=ok?'var(--green)':'var(--amber)'}
+function log(lines,reset){if(reset)$('log').innerHTML='';lines.forEach(t=>{const d=document.createElement('div');d.innerHTML=`<span class="k">[F${f+1}]</span> `+esc(t);$('log').appendChild(d)});$('log').scrollTop=1e6}
+function render(){
+ const fl=F[f];
+ $('flows').innerHTML=F.map((x,k)=>`<button role="tab" aria-selected="${k===f}" data-f="${k}"><i style="background:${x.dot}"></i>${x.t}</button>`).join('');
+ $('cmd').textContent='→ ~ '+fl.cmd;
+ if(fl.retos){
+  $('prog').textContent='4 retos';
+  $('steps').innerHTML=fl.retos.map((r,k)=>`<button data-r="${k}">${k+1}. ${r.e}</button>`).join('');
+  map(null,null);pods([['mi-app-7d9f-a1','ImagePullBackOff'],['mi-app-7d9f-b2','CrashLoopBackOff'],['api-6c4d-z9','Pending']]);
+  $('info').innerHTML=`<div class="fl"><span class="pill">FLUJO 4 · DIAGNÓSTICO DE FALLAS</span><small>4 retos</small></div><h2>Algo se rompió en el puerto. ¿Lo arreglas?</h2><div class="reto">${fl.retos.map((r,k)=>`<details data-c="${r.c}"><summary>Reto ${k+1}: <em>${r.e}</em></summary><p>${r.h}</p><pre>${esc(r.x)}</pre><p><b>Pista:</b> ${r.p}</p><details><summary>Ver solución</summary><p>${r.r}</p></details></details>`).join('')}</div>`;
+  $('info').querySelectorAll('details[data-c]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)map(null,d.dataset.c)}));
+  log(['[kubectl] 3 pods con fallas detectadas','[hint] abre un reto para investigar'],true);return}
+ const s=fl.s[i];
+ $('prog').textContent=`Paso ${i+1} / ${fl.s.length}`;
+ $('steps').innerHTML=fl.s.map((x,k)=>`<button class="${k===i?'on':k<i?'done':''}" data-s="${k}" title="${C[x.c].n}">${k+1}. ${C[x.c].n}</button>`).join('');
+ map(s.c,s.b);pods(s.p);
+ $('info').innerHTML=`<div class="fl"><span class="pill">FLUJO ${f+1} · ${fl.t.replace(/^\d\.\s*/,'').toUpperCase()}</span><small>Paso ${i+1} de ${fl.s.length}</small></div><h2>${i+1}. ${s.h}</h2>${ana?`<div class="bx w"><h3>¿Qué pasa en el puerto?</h3><p>${s.a}</p></div>`:''}<div class="bx"><h3>En palabras sencillas</h3><p>${s.e}</p></div><div class="bx k"><h3>Bajo el capó (técnico)</h3><p>${s.x}</p></div><div class="yaml"><div class="h"><span>Estado del objeto en este paso</span><span>YAML / CLI</span></div><pre>${esc(s.y)}</pre></div>`;
+ log(s.l,i===0);
+}
+function go(d){const fl=F[f];if(fl.retos)return;const n=i+d;if(n<0||n>=fl.s.length){stop();return}i=n;render()}
+function stop(){clearInterval(timer);timer=null;$('auto').textContent='▶ Auto'}
+function setF(k){stop();f=k;i=0;render()}
+$('next').onclick=()=>go(1);$('prev').onclick=()=>go(-1);
+$('reset').onclick=()=>{stop();i=0;render()};
+$('auto').onclick=()=>{if(timer){stop();return}$('auto').textContent='❚❚ Pausa';timer=setInterval(()=>go(1),2600)};
+$('crash').onclick=()=>setF(2);
+$('ana').onclick=()=>{ana=!ana;$('ana').textContent='Puerto: '+(ana?'ON':'OFF');$('ana').classList.toggle('on',ana);render()};
+$('flows').onclick=e=>{const b=e.target.closest('[data-f]');if(b)setF(+b.dataset.f)};
+$('steps').onclick=e=>{const b=e.target.closest('[data-s]');if(b){stop();i=+b.dataset.s;render();return}
+ const r=e.target.closest('[data-r]');if(r){const d=$('info').querySelectorAll('details[data-c]')[+r.dataset.r];if(d){d.open=true;d.scrollIntoView({block:'nearest'})}}};
+document.querySelector('.map').addEventListener('click',e=>{const b=e.target.closest('button[data-c]');if(!b)return;const k=b.dataset.c,v=C[k];stop();map(k,null);
+ $('info').innerHTML=`<div class="fl"><span class="pill">INSPECTOR DE COMPONENTES</span><small>${esc(v.tg[0])}</small></div><h2>${v.n}</h2><div class="bx w"><h3>En el puerto: ${v.an}</h3><p>${v.d}</p></div><div class="yaml"><div class="h"><span>Comando útil</span><span>CLI</span></div><pre>${esc(v.cmd)}</pre></div>`});
+document.addEventListener('keydown',e=>{if(e.target.closest('summary'))return;if(e.key==='ArrowRight')go(1);if(e.key==='ArrowLeft')go(-1)});
+render();
+}
+</script>
+</body>
+</html>
